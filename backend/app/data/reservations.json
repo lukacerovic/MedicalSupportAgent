@@ -1,0 +1,44 @@
+[
+  {
+    "serviceId": "cardio_check",
+    "date": "2026-01-10",
+    "time": "09:30",
+    "patientName": "Marko Jovanovic",
+    "patientDOB": "1987-05-12"
+  },
+  {
+    "serviceId": "blood_tests_basic",
+    "date": "2026-01-10",
+    "time": "08:15",
+    "patientName": "Ivana Petrovic",
+    "patientDOB": "1992-11-03"
+  },
+  {
+    "serviceId": "internal_medicine",
+    "date": "2026-01-11",
+    "time": "11:00",
+    "patientName": "Nikola Stojanovic",
+    "patientDOB": "1978-02-27"
+  },
+  {
+    "serviceId": "cardio_ultrasound",
+    "date": "2026-01-11",
+    "time": "14:30",
+    "patientName": "Jelena Markovic",
+    "patientDOB": "1985-08-19"
+  },
+  {
+    "serviceId": "abdominal_ultrasound",
+    "date": "2026-01-12",
+    "time": "10:00",
+    "patientName": "Stefan Ilic",
+    "patientDOB": "1990-01-09"
+  },
+  {
+    "serviceId": "neurology_consult",
+    "date": "2026-01-12",
+    "time": "13:45",
+    "patientName": "Ana Milosevic",
+    "patientDOB": "1995-06-21"
+  }
+]

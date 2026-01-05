@@ -1,0 +1,82 @@
+[
+  {
+    "id": "cardio_check",
+    "name": "Cardiology Examination",
+    "durationMinutes": 30,
+    "price": 80,
+    "description": "Comprehensive heart health evaluation.",
+    "whatIsIncluded": "ECG, blood pressure measurement, heart auscultation.",
+    "howItsDone": "Non-invasive examination performed by a cardiologist.",
+    "specialPreparation": "Avoid caffeine and smoking 2 hours before the exam."
+  },
+  {
+    "id": "cardio_ultrasound",
+    "name": "Heart Ultrasound (Echocardiography)",
+    "durationMinutes": 40,
+    "price": 120,
+    "description": "Ultrasound imaging of the heart to assess structure and function.",
+    "whatIsIncluded": "Detailed ultrasound imaging and cardiologist report.",
+    "howItsDone": "Ultrasound probe is placed on the chest with gel.",
+    "specialPreparation": null
+  },
+  {
+    "id": "internal_medicine",
+    "name": "Internal Medicine Consultation",
+    "durationMinutes": 25,
+    "price": 60,
+    "description": "General health assessment and medical consultation.",
+    "whatIsIncluded": "Medical history review, basic physical examination.",
+    "howItsDone": "Face-to-face consultation with an internal medicine specialist.",
+    "specialPreparation": null
+  },
+  {
+    "id": "blood_tests_basic",
+    "name": "Basic Blood Test Panel",
+    "durationMinutes": 15,
+    "price": 50,
+    "description": "Basic laboratory blood analysis.",
+    "whatIsIncluded": "Complete blood count, glucose, cholesterol.",
+    "howItsDone": "Blood sample taken from a vein.",
+    "specialPreparation": "Fasting for at least 8 hours is required."
+  },
+  {
+    "id": "blood_tests_extended",
+    "name": "Extended Blood Test Panel",
+    "durationMinutes": 20,
+    "price": 90,
+    "description": "Comprehensive laboratory blood analysis.",
+    "whatIsIncluded": "CBC, glucose, cholesterol, liver enzymes, kidney function.",
+    "howItsDone": "Blood sample taken from a vein.",
+    "specialPreparation": "Fasting for at least 10 hours is required."
+  },
+  {
+    "id": "neurology_consult",
+    "name": "Neurology Consultation",
+    "durationMinutes": 30,
+    "price": 85,
+    "description": "Evaluation of neurological symptoms.",
+    "whatIsIncluded": "Neurological examination and consultation.",
+    "howItsDone": "Clinical neurological assessment by a neurologist.",
+    "specialPreparation": null
+  },
+  {
+    "id": "orthopedic_exam",
+    "name": "Orthopedic Examination",
+    "durationMinutes": 30,
+    "price": 70,
+    "description": "Assessment of bones, joints, and muscles.",
+    "whatIsIncluded": "Joint mobility tests and physical examination.",
+    "howItsDone": "Manual examination by an orthopedic specialist.",
+    "specialPreparation": "Wear comfortable clothing."
+  },
+  {
+    "id": "abdominal_ultrasound",
+    "name": "Abdominal Ultrasound",
+    "durationMinutes": 30,
+    "price": 75,
+    "description": "Ultrasound imaging of abdominal organs.",
+    "whatIsIncluded": "Ultrasound of liver, gallbladder, pancreas, kidneys.",
+    "howItsDone": "Ultrasound probe used on the abdomen with gel.",
+    "specialPreparation": "Fasting for at least 6 hours before the exam."
+  }
+]
