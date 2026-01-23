@@ -112,6 +112,8 @@ def _safe_header_value(value: str) -> str:
         return ""
     # Remove CR/LF and collapse whitespace
     v = value.replace("\r", " ").replace("\n", " ")
+        # Encode to ASCII, replacing non-ASCII characters with '?'
+        v = v.encode('ascii', errors='replace').decode('ascii')
     # Hard limit to avoid huge headers
     if len(v) > 1000:
         v = v[:1000] + "…"
