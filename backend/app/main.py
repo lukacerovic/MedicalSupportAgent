@@ -61,8 +61,41 @@ def _tts_to_wav_bytes(text: str) -> bytes:
     return proc.stdout
 
 
+def _dump_conversation_and_timings(session_id: str, t_llm0: float, t_llm1: float, t_tts0: float | None = None, t_tts1: float | None = None, t0: float | None = None):
+    convo = memory.get(session_id)
+    print("\n--- Conversation Dump ---")
+    for idx, msg in enumerate(convo):
+        role = "user" if idx % 2 == 0 else "assistant"
+        print(f"[{idx:02d}] {role}: {msg}")
+    print(f"LLM time: {(t_llm1 - t_llm0):.3f}s")
+    if t_tts0 is not None and t_tts1 is not None:
+        print(f"TTS time: {(t_tts1 - t_tts0):.3f}s")
+    if t0 is not None:
+        print(f"Total time: {(time.perf_counter() - t0):.3f}s")
+    print("--- End Conversation Dump ---\n")
+
+
+@app.post("/message_text")
+def message_text(req: MessageRequest):
+    """Debug/helper endpoint: returns text only."""
+    t0 = time.perf_counter()
+
+    memory.add_user(req.session_id, req.user_message)
+
+    t_llm0 = time.perf_counter()
+    ai_response = agent.respond(memory.get(req.session_id))
+    t_llm1 = time.perf_counter()
+
+    memory.add_ai(req.session_id, ai_response)
+
+    _dump_conversation_and_timings(req.session_id, t_llm0, t_llm1, t0=t0)
+
+    return {"response_text": ai_response}
+
+
 @app.post("/message")
 def message(req: MessageRequest):
+    """Primary endpoint: returns WAV bytes (audio/wav)."""
     t0 = time.perf_counter()
 
     memory.add_user(req.session_id, req.user_message)
@@ -77,23 +110,14 @@ def message(req: MessageRequest):
     wav_bytes = _tts_to_wav_bytes(ai_response)
     t_tts1 = time.perf_counter()
 
-    convo = memory.get(req.session_id)
-    print("\n--- Conversation Dump ---")
-    for idx, msg in enumerate(convo):
-        role = "user" if idx % 2 == 0 else "assistant"
-        print(f"[{idx:02d}] {role}: {msg}")
-    print(f"LLM time: {(t_llm1 - t_llm0):.3f}s")
-    print(f"TTS time: {(t_tts1 - t_tts0):.3f}s")
-    print(f"Total time: {(time.perf_counter() - t0):.3f}s")
-    print("--- End Conversation Dump ---\n")
+    _dump_conversation_and_timings(req.session_id, t_llm0, t_llm1, t_tts0, t_tts1, t0=t0)
 
     # Return wav bytes directly (no URL)
     return Response(
         content=wav_bytes,
         media_type="audio/wav",
         headers={
-            # Provide text in a header (simple) so frontend can still show transcript.
-            # If you need more metadata, switch to multipart/mixed or base64-in-JSON.
+            # Frontend can show transcript
             "X-Response-Text": ai_response,
         },
     )
