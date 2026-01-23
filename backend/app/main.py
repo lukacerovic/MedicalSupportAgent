@@ -4,6 +4,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from app.agent.base_agent import BaseAgent
 from app.memory.session_memory import memory
+from app.agent.system_prompt import SYSTEM_PROMPT
 
 import time
 import uuid
@@ -11,13 +12,7 @@ import subprocess
 from pathlib import Path
 
 # More concise, call-assistant style prompt
-SYSTEM_PROMPT = (
-    "You are Ana, BelMedic call assistant. "
-    "Be brief and practical. "
-    "Ask one clear question at a time when you need missing details. "
-    "Do not add extra info unless asked. "
-    "If the user asks about services or reservations, help them complete it."
-)
+
 
 agent = BaseAgent(system_prompt=SYSTEM_PROMPT)
 
