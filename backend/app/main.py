@@ -45,6 +45,9 @@ def start_session():
 def _tts_to_wav_bytes(text: str) -> bytes:
     """Generate WAV audio bytes from text using Piper CLI.
 
+    On Windows, piping WAV to stdout ("--output_file -") can be unreliable.
+    To be robust, write to a temp WAV on disk and read bytes.
+
     Assumes `piper` is available on PATH and a model exists at `app/data/voice.onnx`.
     """
     model_path = Path("app/data/voice.onnx")
@@ -53,12 +56,25 @@ def _tts_to_wav_bytes(text: str) -> bytes:
             "Missing Piper model at app/data/voice.onnx. Add a Piper .onnx model before using TTS."
         )
 
-    # output to stdout
-    cmd = ["piper", "--model", str(model_path), "--output_file", "-"]
+    out_dir = Path("app/data/_tts_out")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    wav_path = out_dir / f"tts_{uuid.uuid4().hex}.wav"
+
+    cmd = ["piper", "--model", str(model_path), "--output_file", str(wav_path)]
     proc = subprocess.run(cmd, input=text.encode("utf-8"), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if proc.returncode != 0:
         raise RuntimeError(f"Piper TTS failed: {proc.stderr.decode('utf-8', errors='ignore')}")
-    return proc.stdout
+
+    wav_bytes = wav_path.read_bytes()
+
+    # best-effort cleanup
+    try:
+        wav_path.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+    return wav_bytes
 
 
 def _dump_conversation_and_timings(session_id: str, t_llm0: float, t_llm1: float, t_tts0: float | None = None, t_tts1: float | None = None, t0: float | None = None):
@@ -112,12 +128,10 @@ def message(req: MessageRequest):
 
     _dump_conversation_and_timings(req.session_id, t_llm0, t_llm1, t_tts0, t_tts1, t0=t0)
 
-    # Return wav bytes directly (no URL)
     return Response(
         content=wav_bytes,
         media_type="audio/wav",
         headers={
-            # Frontend can show transcript
             "X-Response-Text": ai_response,
         },
     )
