@@ -7,15 +7,16 @@ function App() {
   const recognitionRef = useRef(null);
   const silenceTimerRef = useRef(null);
 
-  // Function to speak text via native TTS
-  const speak = (text, onEnd) => {
-    setStatus("AI Agent speaking...");
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "en-US";
-    utterance.onend = () => {
-      if (onEnd) onEnd();
-    };
-    window.speechSynthesis.speak(utterance);
+  // Play WAV bytes returned by backend
+  const playWavResponse = async (response) => {
+    const buf = await response.arrayBuffer();
+    const blob = new Blob([buf], { type: "audio/wav" });
+    const url = URL.createObjectURL(blob);
+
+    const audio = new Audio(url);
+    audio.onended = () => URL.revokeObjectURL(url);
+
+    await audio.play();
   };
 
   // Start a new session and play greeting
@@ -27,11 +28,10 @@ function App() {
       const newSessionId = data.session_id;
       setSessionId(newSessionId);
 
-      // Play greeting using TTS
-      speak(data.greeting, () => {
-        setStatus("Listening...");
-        startRecognition(newSessionId);
-      });
+      // If backend sends audio greeting in the future, we can play it here.
+      // For now, just start listening.
+      setStatus("Listening...");
+      startRecognition(newSessionId);
     } catch (err) {
       console.error("Failed to start session:", err);
       setStatus("Error starting session");
@@ -79,13 +79,22 @@ function App() {
               user_message: transcript,
             }),
           });
-          const data = await response.json();
 
-          // Play AI response
-          speak(data.response, () => {
-            setStatus("Listening...");
-            startRecognition(sessionId); // continue listening
-          });
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          // Transcript is sent via header, WAV is the response body
+          const responseText = response.headers.get("X-Response-Text") || "";
+          if (responseText) {
+            console.log("AI:", responseText);
+          }
+
+          // Auto-play the wav returned by backend
+          await playWavResponse(response);
+
+          setStatus("Listening...");
+          startRecognition(sessionId); // continue listening
         } catch (err) {
           console.error("Failed to send message:", err);
           setStatus("Error processing message");
