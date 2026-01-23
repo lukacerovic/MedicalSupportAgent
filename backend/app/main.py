@@ -31,9 +31,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 class MessageRequest(BaseModel):
     session_id: str
     user_message: str
+
 
 @app.get("/start_session")
 def start_session():
@@ -62,9 +64,16 @@ def _tts_to_wav_bytes(text: str) -> bytes:
     wav_path = out_dir / f"tts_{uuid.uuid4().hex}.wav"
 
     cmd = ["piper", "--model", str(model_path), "--output_file", str(wav_path)]
-    proc = subprocess.run(cmd, input=text.encode("utf-8"), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.run(
+        cmd,
+        input=text.encode("utf-8"),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
     if proc.returncode != 0:
-        raise RuntimeError(f"Piper TTS failed: {proc.stderr.decode('utf-8', errors='ignore')}")
+        raise RuntimeError(
+            f"Piper TTS failed: {proc.stderr.decode('utf-8', errors='ignore')}"
+        )
 
     wav_bytes = wav_path.read_bytes()
 
@@ -77,7 +86,14 @@ def _tts_to_wav_bytes(text: str) -> bytes:
     return wav_bytes
 
 
-def _dump_conversation_and_timings(session_id: str, t_llm0: float, t_llm1: float, t_tts0: float | None = None, t_tts1: float | None = None, t0: float | None = None):
+def _dump_conversation_and_timings(
+    session_id: str,
+    t_llm0: float,
+    t_llm1: float,
+    t_tts0: float | None = None,
+    t_tts1: float | None = None,
+    t0: float | None = None,
+):
     convo = memory.get(session_id)
     print("\n--- Conversation Dump ---")
     for idx, msg in enumerate(convo):
@@ -89,6 +105,22 @@ def _dump_conversation_and_timings(session_id: str, t_llm0: float, t_llm1: float
     if t0 is not None:
         print(f"Total time: {(time.perf_counter() - t0):.3f}s")
     print("--- End Conversation Dump ---\n")
+
+
+def _safe_header_value(value: str) -> str:
+    """Make a value safe for use in an HTTP header.
+
+    Starlette/uvicorn will error on invalid header characters (e.g., newlines).
+    Keep it ASCII-ish and single-line.
+    """
+    if value is None:
+        return ""
+    # Remove CR/LF and collapse whitespace
+    v = value.replace("\r", " ").replace("\n", " ")
+    # Hard limit to avoid huge headers
+    if len(v) > 1000:
+        v = v[:1000] + "…"
+    return v
 
 
 @app.post("/message_text")
@@ -132,6 +164,6 @@ def message(req: MessageRequest):
         content=wav_bytes,
         media_type="audio/wav",
         headers={
-            "X-Response-Text": ai_response,
+            "X-Response-Text": _safe_header_value(ai_response),
         },
     )
