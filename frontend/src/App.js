@@ -1,35 +1,60 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import "./App.css";
 
 function App() {
   const [status, setStatus] = useState("Click 'Call AI' to start");
   const [sessionId, setSessionId] = useState(null);
+  const [messages, setMessages] = useState([]);
   const recognitionRef = useRef(null);
   const silenceTimerRef = useRef(null);
+  const isListeningRef = useRef(false);
 
-  // Play WAV bytes returned by backend
   const playWavResponse = async (response) => {
     const buf = await response.arrayBuffer();
     const blob = new Blob([buf], { type: "audio/wav" });
     const url = URL.createObjectURL(blob);
 
-    const audio = new Audio(url);
-    audio.onended = () => URL.revokeObjectURL(url);
-
-    await audio.play();
+    return new Promise((resolve, reject) => {
+      const audio = new Audio(url);
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        resolve();
+      };
+      audio.onerror = (e) => {
+        URL.revokeObjectURL(url);
+        reject(e);
+      };
+      audio.play().catch(reject);
+    });
   };
 
-  // Start a new session and play greeting
+  const stopRecognition = () => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onend = null;
+        recognitionRef.current.stop();
+      } catch (e) {}
+      recognitionRef.current = null;
+    }
+    isListeningRef.current = false;
+  };
+
   const startCall = async () => {
     setStatus("Starting session...");
+    stopRecognition();
     try {
       const res = await fetch("http://127.0.0.1:8000/start_session");
       const data = await res.json();
       const newSessionId = data.session_id;
-      setSessionId(newSessionId);
+      const greeting = data.greeting || "BelMedic. Ana speaking. How can I help?";
 
-      // If backend sends audio greeting in the future, we can play it here.
-      // For now, just start listening.
+      setSessionId(newSessionId);
+      setMessages([{ role: "assistant", text: greeting }]);
+      
       setStatus("Listening...");
       startRecognition(newSessionId);
     } catch (err) {
@@ -38,10 +63,8 @@ function App() {
     }
   };
 
-  // Start listening for user voice
-  const startRecognition = (sessionId) => {
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
+  const startRecognition = (sId) => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       alert("Your browser does not support Speech Recognition");
       return;
@@ -60,69 +83,68 @@ function App() {
         transcript += event.results[i][0].transcript;
       }
 
-      // Reset silence timer on any speech
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
-      // Set timer to detect 3s silence
       silenceTimerRef.current = setTimeout(async () => {
-        recognition.stop(); // stop recording
+        const finalText = transcript.trim();
+        if (!finalText) return;
 
-        setStatus("Processing your message...");
+        stopRecognition();
+        setStatus("Processing...");
+        setMessages((prev) => [...prev, { role: "user", text: finalText }]);
 
-        // Send transcript to backend
         try {
           const response = await fetch("http://127.0.0.1:8000/message", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              session_id: sessionId,
-              user_message: transcript,
-            }),
+            body: JSON.stringify({ session_id: sId, user_message: finalText }),
           });
 
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-          }
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-          // Transcript is sent via header, WAV is the response body
           const responseText = response.headers.get("X-Response-Text") || "";
           if (responseText) {
-            console.log("AI:", responseText);
+            setMessages((prev) => [...prev, { role: "assistant", text: responseText }]);
           }
 
-          // Auto-play the wav returned by backend
           await playWavResponse(response);
-
+          
           setStatus("Listening...");
-          startRecognition(sessionId); // continue listening
+          startRecognition(sId);
         } catch (err) {
-          console.error("Failed to send message:", err);
+          console.error("Error:", err);
           setStatus("Error processing message");
         }
-      }, 3000); // 3s pause
-    };
-
-    recognition.onerror = (event) => {
-      console.error("Recognition error:", event.error);
-      setStatus("Error in recognition");
+      }, 3000);
     };
 
     recognition.onend = () => {
-      // This triggers if recognition stops without silence timer
-      if (status === "Listening...") recognition.start();
+      if (isListeningRef.current) {
+        try { recognition.start(); } catch (e) {}
+      }
     };
 
     recognition.start();
     recognitionRef.current = recognition;
+    isListeningRef.current = true;
   };
+
+  useEffect(() => {
+    return () => stopRecognition();
+  }, []);
 
   return (
     <div className="app">
       <h1>AI Medical Agent</h1>
       <p>{status}</p>
-      <button onClick={startCall} className="call-button">
-        Call AI
-      </button>
+      <button onClick={startCall} className="call-button">Call AI</button>
+      <div className="chat">
+        {messages.map((m, idx) => (
+          <div key={idx} className={`msg ${m.role}`}>
+            <strong>{m.role === "assistant" ? "Ana" : "You"}:</strong> {m.text}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
