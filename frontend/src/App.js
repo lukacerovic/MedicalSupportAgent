@@ -6,16 +6,40 @@ function App() {
   const [sessionId, setSessionId] = useState(null);
   const recognitionRef = useRef(null);
   const silenceTimerRef = useRef(null);
+  const isPlayingRef = useRef(false);
 
-  // Function to speak text via native TTS
-  const speak = (text, onEnd) => {
+  const playAudio = async (audioBlob, onEnd) => {
     setStatus("AI Agent speaking...");
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "en-US";
-    utterance.onend = () => {
+    isPlayingRef.current = true;
+
+    const audioUrl = URL.createObjectURL(audioBlob);
+    const audio = new Audio(audioUrl);
+
+    const cleanup = () => {
+      URL.revokeObjectURL(audioUrl);
+    };
+
+    audio.onended = () => {
+      cleanup();
+      isPlayingRef.current = false;
       if (onEnd) onEnd();
     };
-    window.speechSynthesis.speak(utterance);
+
+    audio.onerror = (e) => {
+      console.error("Audio playback error:", e);
+      cleanup();
+      isPlayingRef.current = false;
+      setStatus("Error playing audio");
+    };
+
+    try {
+      await audio.play();
+    } catch (err) {
+      console.error("Autoplay blocked or failed:", err);
+      cleanup();
+      isPlayingRef.current = false;
+      setStatus("Autoplay blocked. Please interact and try again.");
+    }
   };
 
   // Start a new session and play greeting
@@ -23,12 +47,17 @@ function App() {
     setStatus("Starting session...");
     try {
       const res = await fetch("http://127.0.0.1:8000/start_session");
-      const data = await res.json();
-      const newSessionId = data.session_id;
+
+      const newSessionId = res.headers.get("X-Session-Id");
+      if (!newSessionId) {
+        throw new Error("Missing X-Session-Id header from backend");
+      }
       setSessionId(newSessionId);
 
-      // Play greeting using TTS
-      speak(data.greeting, () => {
+      const greetingBlob = await res.blob();
+
+      // Play greeting audio from backend
+      playAudio(greetingBlob, () => {
         setStatus("Listening...");
         startRecognition(newSessionId);
       });
@@ -40,6 +69,9 @@ function App() {
 
   // Start listening for user voice
   const startRecognition = (sessionId) => {
+    // Don't start listening while audio is playing.
+    if (isPlayingRef.current) return;
+
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -79,10 +111,11 @@ function App() {
               user_message: transcript,
             }),
           });
-          const data = await response.json();
 
-          // Play AI response
-          speak(data.response, () => {
+          const audioBlob = await response.blob();
+
+          // Play AI response audio
+          playAudio(audioBlob, () => {
             setStatus("Listening...");
             startRecognition(sessionId); // continue listening
           });
@@ -99,8 +132,8 @@ function App() {
     };
 
     recognition.onend = () => {
-      // This triggers if recognition stops without silence timer
-      if (status === "Listening...") recognition.start();
+      // Restart recognition only if we are in listening mode and NOT playing audio.
+      if (status === "Listening..." && !isPlayingRef.current) recognition.start();
     };
 
     recognition.start();
