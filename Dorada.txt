@@ -1,0 +1,3 @@
+Ubrzati vreme responsa:
+    Websocket
+    Generator za vracanje chunkova teksta

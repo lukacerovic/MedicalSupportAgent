@@ -60,4 +60,4 @@ packaging
 typing-inspection>=0.4.2
 
 
-pip install "httpx<0.25.0,>=0.23.0" --force-reinstall
+# pip install "httpx<0.25.0,>=0.23.0" --force-reinstall

@@ -4,9 +4,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from app.agent.base_agent import BaseAgent
 from app.memory.session_memory import memory
+from app.agent.system_prompt import SYSTEM_PROMPT
 
 # Load your AI agent
-agent = BaseAgent(system_prompt="You are Ana, a medical support agent for BelMedic. Answer user questions about services and reservations politely and informatively.")
+agent = BaseAgent(system_prompt=SYSTEM_PROMPT)
 
 app = FastAPI()
 
