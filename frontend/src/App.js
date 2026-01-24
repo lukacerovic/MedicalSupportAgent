@@ -8,12 +8,38 @@ function App() {
   const silenceTimerRef = useRef(null);
   const isPlayingRef = useRef(false);
 
+  // Keep one audio element alive for the whole session. This helps with autoplay policies.
+  const audioRef = useRef(null);
+
+  const ensureAudioElement = () => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio();
+      audioRef.current.preload = "auto";
+    }
+    return audioRef.current;
+  };
+
+  // Unlock audio playback during a user gesture (Call AI click).
+  const unlockAudio = async () => {
+    try {
+      const audio = ensureAudioElement();
+      // Attempt a play/pause cycle to get autoplay permission.
+      // Some browsers require a user gesture before any audio can be played later.
+      audio.src = "";
+      await audio.play();
+      audio.pause();
+    } catch (e) {
+      // If this fails, we will still try to play later, and fall back to prompting the user.
+      console.warn("Audio unlock failed (may still be OK):", e);
+    }
+  };
+
   const playAudio = async (audioBlob, onEnd) => {
     setStatus("AI Agent speaking...");
     isPlayingRef.current = true;
 
     const audioUrl = URL.createObjectURL(audioBlob);
-    const audio = new Audio(audioUrl);
+    const audio = ensureAudioElement();
 
     const cleanup = () => {
       URL.revokeObjectURL(audioUrl);
@@ -32,27 +58,30 @@ function App() {
       setStatus("Error playing audio");
     };
 
+    audio.src = audioUrl;
+
     try {
       await audio.play();
     } catch (err) {
       console.error("Autoplay blocked or failed:", err);
       cleanup();
       isPlayingRef.current = false;
-      setStatus("Autoplay blocked. Please interact and try again.");
+      setStatus("Autoplay blocked. Click 'Call AI' again to enable sound.");
     }
   };
 
-  // Start a new session and play greeting (frontend TTS removed)
+  // Start a new session (kept same JSON contract)
   const startCall = async () => {
     setStatus("Starting session...");
     try {
+      // Ensure this runs inside the click handler user gesture.
+      await unlockAudio();
+
       const res = await fetch("http://127.0.0.1:8000/start_session");
       const data = await res.json();
       const newSessionId = data.session_id;
       setSessionId(newSessionId);
 
-      // Instead of speaking greeting, we immediately start listening.
-      // (Keeping session logic the same; only /message returns audio now.)
       setStatus("Listening...");
       startRecognition(newSessionId);
     } catch (err) {
