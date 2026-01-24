@@ -42,25 +42,19 @@ function App() {
     }
   };
 
-  // Start a new session and play greeting
+  // Start a new session and play greeting (frontend TTS removed)
   const startCall = async () => {
     setStatus("Starting session...");
     try {
       const res = await fetch("http://127.0.0.1:8000/start_session");
-
-      const newSessionId = res.headers.get("X-Session-Id");
-      if (!newSessionId) {
-        throw new Error("Missing X-Session-Id header from backend");
-      }
+      const data = await res.json();
+      const newSessionId = data.session_id;
       setSessionId(newSessionId);
 
-      const greetingBlob = await res.blob();
-
-      // Play greeting audio from backend
-      playAudio(greetingBlob, () => {
-        setStatus("Listening...");
-        startRecognition(newSessionId);
-      });
+      // Instead of speaking greeting, we immediately start listening.
+      // (Keeping session logic the same; only /message returns audio now.)
+      setStatus("Listening...");
+      startRecognition(newSessionId);
     } catch (err) {
       console.error("Failed to start session:", err);
       setStatus("Error starting session");
@@ -69,7 +63,6 @@ function App() {
 
   // Start listening for user voice
   const startRecognition = (sessionId) => {
-    // Don't start listening while audio is playing.
     if (isPlayingRef.current) return;
 
     const SpeechRecognition =
@@ -92,16 +85,12 @@ function App() {
         transcript += event.results[i][0].transcript;
       }
 
-      // Reset silence timer on any speech
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
-      // Set timer to detect 3s silence
       silenceTimerRef.current = setTimeout(async () => {
-        recognition.stop(); // stop recording
-
+        recognition.stop();
         setStatus("Processing your message...");
 
-        // Send transcript to backend
         try {
           const response = await fetch("http://127.0.0.1:8000/message", {
             method: "POST",
@@ -114,16 +103,15 @@ function App() {
 
           const audioBlob = await response.blob();
 
-          // Play AI response audio
           playAudio(audioBlob, () => {
             setStatus("Listening...");
-            startRecognition(sessionId); // continue listening
+            startRecognition(sessionId);
           });
         } catch (err) {
           console.error("Failed to send message:", err);
           setStatus("Error processing message");
         }
-      }, 3000); // 3s pause
+      }, 3000);
     };
 
     recognition.onerror = (event) => {
@@ -132,7 +120,6 @@ function App() {
     };
 
     recognition.onend = () => {
-      // Restart recognition only if we are in listening mode and NOT playing audio.
       if (status === "Listening..." && !isPlayingRef.current) recognition.start();
     };
 

@@ -1,20 +1,12 @@
 # app/main.py
-from __future__ import annotations
-
-import uuid
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app.agent.base_agent import BaseAgent
-from app.agent.system_prompt import SYSTEM_PROMPT
 from app.memory.session_memory import memory
-
-# TTS (backend-side)
-from app.tts.piper_tts import synthesize_speech_mp3
-
+from app.agent.system_prompt import SYSTEM_PROMPT
 
 # Load your AI agent
 agent = BaseAgent(system_prompt=SYSTEM_PROMPT)
@@ -36,30 +28,34 @@ class MessageRequest(BaseModel):
     user_message: str
 
 
-# Start new session
+# Start new session (kept EXACTLY the same JSON contract as before)
 @app.get("/start_session")
 def start_session():
+    import uuid
+
     session_id = str(uuid.uuid4())
     memory.init(session_id)
-
-    greeting_text = "Hello, this is Ana from BelMedic. How can I help you today?"
-    audio_bytes = synthesize_speech_mp3(greeting_text)
-
-    # We return the session id in a response header so frontend can still store it,
-    # while the body is audio.
-    return Response(
-        content=audio_bytes,
-        media_type="audio/mpeg",
-        headers={"X-Session-Id": session_id},
-    )
+    return {
+        "session_id": session_id,
+        "greeting": "Hello, this is Ana from BelMedic. How can I help you today?",
+    }
 
 
-# Send user message to agent and get response
+# Send user message to agent and get response AUDIO
 @app.post("/message")
 def message(req: MessageRequest):
-    memory.add_user(req.session_id, req.user_message)
-    ai_response_text = agent.respond(memory.get(req.session_id))
-    memory.add_ai(req.session_id, ai_response_text)
+    """Return audio bytes instead of JSON string.
 
-    audio_bytes = synthesize_speech_mp3(ai_response_text)
-    return Response(content=audio_bytes, media_type="audio/mpeg")
+    This keeps the same request payload as before, but changes the response to
+    audio/wav to avoid ffmpeg/mp3 dependencies.
+    """
+
+    memory.add_user(req.session_id, req.user_message)
+    ai_response = agent.respond(memory.get(req.session_id))
+    memory.add_ai(req.session_id, ai_response)
+
+    # Minimal, dependency-free TTS using Piper WAV output.
+    from app.tts.piper_wav_tts import synthesize_speech_wav
+
+    wav_bytes = synthesize_speech_wav(ai_response)
+    return Response(content=wav_bytes, media_type="audio/wav")
