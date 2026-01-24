@@ -47,15 +47,16 @@ def message(req: MessageRequest):
     ai_response = agent.respond(memory.get(req.session_id))
     memory.add_ai(req.session_id, ai_response)
 
-    from app.tts.edge_tts import synthesize_speech_mp3
+    # Offline TTS (Piper -> WAV). Requires eSpeak NG data to be installed/configured.
+    from app.tts.piper_wav_tts import synthesize_speech_wav
 
-    mp3_bytes = synthesize_speech_mp3(ai_response)
+    wav_bytes = synthesize_speech_wav(ai_response)
 
-    if not mp3_bytes:
+    if not wav_bytes:
         return Response(
-            content=b"edge-tts returned empty audio.",
+            content=b"Piper returned empty audio. Ensure eSpeak NG is installed and voice model files are present.",
             status_code=500,
             media_type="text/plain",
         )
 
-    return Response(content=mp3_bytes, media_type="audio/mpeg")
+    return Response(content=wav_bytes, media_type="audio/wav")

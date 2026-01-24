@@ -6,6 +6,8 @@ from pathlib import Path
 
 from piper.voice import PiperVoice
 
+from app.tts.espeak_setup import ensure_espeak_data_env
+
 
 _voice: PiperVoice | None = None
 
@@ -28,6 +30,9 @@ def _get_voice() -> PiperVoice:
     if _voice is not None:
         return _voice
 
+    # Ensure ESPEAK_DATA_PATH is set if we can auto-detect it.
+    ensure_espeak_data_env()
+
     model_path = os.getenv("PIPER_VOICE_MODEL_PATH")
     config_path = os.getenv("PIPER_VOICE_CONFIG_PATH")
 
@@ -47,35 +52,22 @@ def _get_voice() -> PiperVoice:
 
 
 def synthesize_speech_wav(text: str) -> bytes:
-    """Synthesize speech using Piper and return proper WAV bytes.
-
-    On some setups, piping to a BytesIO results in empty output.
-    We generate raw samples and write a real RIFF/WAV container ourselves.
-    """
+    """Synthesize speech using Piper and return WAV bytes."""
 
     voice = _get_voice()
 
-    # Piper returns (samples: array('h')/list[int], sample_rate: int)
+    # Piper returns (samples, sample_rate)
     samples, sample_rate = voice.synthesize(text)
-
     if not samples:
         return b""
 
-    out_path = None
-    try:
-        import io
+    import io
 
-        wav_io = io.BytesIO()
-        with wave.open(wav_io, "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)  # 16-bit
-            wf.setframerate(int(sample_rate))
-            wf.writeframes(bytes(samples))
+    wav_io = io.BytesIO()
+    with wave.open(wav_io, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(int(sample_rate))
+        wf.writeframes(bytes(samples))
 
-        return wav_io.getvalue()
-    finally:
-        if out_path:
-            try:
-                os.remove(out_path)
-            except Exception:
-                pass
+    return wav_io.getvalue()

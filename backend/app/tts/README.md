@@ -1,23 +1,22 @@
 # Backend TTS
 
-This backend returns an audio response from `/message`.
+## Current mode: Piper (offline)
 
-## Option A (recommended on Windows): edge-tts
+`POST /message` returns `audio/wav` generated on the backend.
 
-Install:
+### Requirements
 
-```bash
-pip install edge-tts
-```
+1) Install **eSpeak NG** on Windows (needed for phonemization). Piper will fail if it can't find `phontab` inside `espeak-ng-data`.
 
-It uses Microsoft Edge's online TTS voices (no API key). Default voice is `en-US-JennyNeural`.
+2) Place voice files in:
 
-Optional env vars:
+- `backend/app/data/en_US-lessac-medium.onnx`
+- `backend/app/data/en_US-lessac-medium.onnx.json`
 
-- `EDGE_TTS_VOICE` (e.g. `en-US-JennyNeural`)
-- `EDGE_TTS_RATE` (e.g. `+0%`, `-10%`, `+10%`)
-- `EDGE_TTS_VOLUME` (e.g. `+0%`, `+20%`)
+### Optional env vars
 
-## Option B: Piper (offline)
+- `PIPER_VOICE_MODEL_PATH`
+- `PIPER_VOICE_CONFIG_PATH`
+- `ESPEAK_DATA_PATH` (path to folder containing `phontab`, e.g. `C:\Program Files\eSpeak NG\espeak-ng-data`)
 
-Piper requires extra setup on Windows (eSpeak NG data). If you still want Piper, use the `piper_*` modules in this folder.
+The backend tries to auto-detect `ESPEAK_DATA_PATH` from common Windows install locations.
