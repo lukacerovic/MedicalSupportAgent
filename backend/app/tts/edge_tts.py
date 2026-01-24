@@ -1,27 +1,24 @@
 from __future__ import annotations
 
 import os
-import ssl
 
 import anyio
-import certifi
 
 
 def synthesize_speech_mp3(text: str) -> bytes:
     """Synthesize speech using edge-tts and return MP3 bytes.
 
-    Windows note:
-    Some machines have broken/malformed certificates in the Windows certificate
-    store which causes `ssl.create_default_context()` to raise:
-      - "cadata does not contain a certificate"
-      - "[ASN1] nested asn1 error"
+    IMPORTANT (Windows):
+    Your Python/Windows certificate store is broken such that importing aiohttp
+    crashes because aiohttp creates default SSL contexts at import time.
 
-    edge-tts depends on aiohttp, which creates a default SSL context by default.
-    We work around this by preconfiguring aiohttp to use an explicit SSL context
-    built from certifi's CA bundle.
+    Therefore we avoid aiohttp entirely and use edge-tts as a CLI tool.
+    This keeps the project free and avoids SSL store issues.
 
-    If that still fails, we fall back to disabling SSL verification (last resort)
-    so the app remains usable.
+    Requires:
+      pip install edge-tts
+
+    This returns MP3 bytes written by edge-tts.
     """
 
     voice = os.getenv("EDGE_TTS_VOICE", "en-US-JennyNeural")
@@ -29,34 +26,40 @@ def synthesize_speech_mp3(text: str) -> bytes:
     volume = os.getenv("EDGE_TTS_VOLUME", "+0%")
 
     async def _run() -> bytes:
-        # Import inside the coroutine so any monkey-patching happens before use.
-        import aiohttp
-        import edge_tts
+        import tempfile
+        import subprocess
 
-        # 1) Preferred: explicit CA bundle from certifi
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            out_path = f.name
+
         try:
-            cafile = certifi.where()
-            ssl_ctx = ssl.create_default_context(cafile=cafile)
-            connector = aiohttp.TCPConnector(ssl=ssl_ctx)
-        except Exception as e:
-            # 2) Last resort: disable SSL verification entirely
-            # WARNING: This reduces security (MITM possible).
-            connector = aiohttp.TCPConnector(ssl=False)
+            # Use stdin to pass text to avoid quoting issues on Windows.
+            cmd = [
+                "edge-tts",
+                "--voice",
+                voice,
+                "--rate",
+                rate,
+                "--volume",
+                volume,
+                "--write-media",
+                out_path,
+                "--text",
+                text,
+            ]
 
-        async with aiohttp.ClientSession(connector=connector) as session:
-            communicate = edge_tts.Communicate(
-                text=text,
-                voice=voice,
-                rate=rate,
-                volume=volume,
-                session=session,
-            )
+            # Run in a worker thread to not block the event loop.
+            def _run_proc():
+                subprocess.run(cmd, check=True, capture_output=True)
 
-            out = bytearray()
-            async for chunk in communicate.stream():
-                if chunk.get("type") == "audio":
-                    out.extend(chunk["data"])
+            await anyio.to_thread.run_sync(_run_proc)
 
-            return bytes(out)
+            with open(out_path, "rb") as rf:
+                return rf.read()
+        finally:
+            try:
+                os.remove(out_path)
+            except Exception:
+                pass
 
     return anyio.run(_run)
