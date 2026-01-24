@@ -1,19 +1,16 @@
 from __future__ import annotations
 
-import io
 import os
+import wave
 from pathlib import Path
 
 from piper.voice import PiperVoice
 
 
-# Cache the voice so we don't reload it on every request.
 _voice: PiperVoice | None = None
 
 
 def _default_voice_paths() -> tuple[str, str] | None:
-    # This file lives at backend/app/tts/piper_wav_tts.py
-    # So backend/app/data is: ../data
     base_dir = Path(__file__).resolve().parents[1]
     data_dir = base_dir / "data"
 
@@ -50,9 +47,35 @@ def _get_voice() -> PiperVoice:
 
 
 def synthesize_speech_wav(text: str) -> bytes:
-    """Synthesize speech using Piper and return WAV bytes."""
+    """Synthesize speech using Piper and return proper WAV bytes.
+
+    On some setups, piping to a BytesIO results in empty output.
+    We generate raw samples and write a real RIFF/WAV container ourselves.
+    """
+
     voice = _get_voice()
 
-    wav_io = io.BytesIO()
-    voice.synthesize(text, wav_io)
-    return wav_io.getvalue()
+    # Piper returns (samples: array('h')/list[int], sample_rate: int)
+    samples, sample_rate = voice.synthesize(text)
+
+    if not samples:
+        return b""
+
+    out_path = None
+    try:
+        import io
+
+        wav_io = io.BytesIO()
+        with wave.open(wav_io, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)  # 16-bit
+            wf.setframerate(int(sample_rate))
+            wf.writeframes(bytes(samples))
+
+        return wav_io.getvalue()
+    finally:
+        if out_path:
+            try:
+                os.remove(out_path)
+            except Exception:
+                pass

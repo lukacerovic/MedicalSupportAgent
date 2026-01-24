@@ -4,11 +4,12 @@ import "./App.css";
 function App() {
   const [status, setStatus] = useState("Click 'Call AI' to start");
   const [sessionId, setSessionId] = useState(null);
+  const [pendingAudioUrl, setPendingAudioUrl] = useState(null);
+
   const recognitionRef = useRef(null);
   const silenceTimerRef = useRef(null);
   const isPlayingRef = useRef(false);
 
-  // Keep one audio element alive for the whole session. This helps with autoplay policies.
   const audioRef = useRef(null);
 
   const ensureAudioElement = () => {
@@ -19,41 +20,24 @@ function App() {
     return audioRef.current;
   };
 
-  // Unlock audio playback during a user gesture (Call AI click).
-  const unlockAudio = async () => {
-    try {
-      const audio = ensureAudioElement();
-      // Attempt a play/pause cycle to get autoplay permission.
-      // Some browsers require a user gesture before any audio can be played later.
-      audio.src = "";
-      await audio.play();
-      audio.pause();
-    } catch (e) {
-      // If this fails, we will still try to play later, and fall back to prompting the user.
-      console.warn("Audio unlock failed (may still be OK):", e);
-    }
+  const cleanupPending = () => {
+    if (pendingAudioUrl) URL.revokeObjectURL(pendingAudioUrl);
+    setPendingAudioUrl(null);
   };
 
-  const playAudio = async (audioBlob, onEnd) => {
+  const playUrl = async (audioUrl, onEnd) => {
     setStatus("AI Agent speaking...");
     isPlayingRef.current = true;
 
-    const audioUrl = URL.createObjectURL(audioBlob);
     const audio = ensureAudioElement();
 
-    const cleanup = () => {
-      URL.revokeObjectURL(audioUrl);
-    };
-
     audio.onended = () => {
-      cleanup();
       isPlayingRef.current = false;
       if (onEnd) onEnd();
     };
 
     audio.onerror = (e) => {
       console.error("Audio playback error:", e);
-      cleanup();
       isPlayingRef.current = false;
       setStatus("Error playing audio");
     };
@@ -62,21 +46,27 @@ function App() {
 
     try {
       await audio.play();
+      // If play succeeded, clear any pending audio.
+      cleanupPending();
     } catch (err) {
       console.error("Autoplay blocked or failed:", err);
-      cleanup();
       isPlayingRef.current = false;
-      setStatus("Autoplay blocked. Click 'Call AI' again to enable sound.");
+      setStatus("Click 'Play response' to hear the AI.");
+      setPendingAudioUrl(audioUrl);
     }
   };
 
-  // Start a new session (kept same JSON contract)
+  const playBlob = async (audioBlob, onEnd) => {
+    const audioUrl = URL.createObjectURL(audioBlob);
+    await playUrl(audioUrl, () => {
+      URL.revokeObjectURL(audioUrl);
+      if (onEnd) onEnd();
+    });
+  };
+
   const startCall = async () => {
     setStatus("Starting session...");
     try {
-      // Ensure this runs inside the click handler user gesture.
-      await unlockAudio();
-
       const res = await fetch("http://127.0.0.1:8000/start_session");
       const data = await res.json();
       const newSessionId = data.session_id;
@@ -90,7 +80,6 @@ function App() {
     }
   };
 
-  // Start listening for user voice
   const startRecognition = (sessionId) => {
     if (isPlayingRef.current) return;
 
@@ -130,9 +119,13 @@ function App() {
             }),
           });
 
-          const audioBlob = await response.blob();
+          if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(errText);
+          }
 
-          playAudio(audioBlob, () => {
+          const audioBlob = await response.blob();
+          await playBlob(audioBlob, () => {
             setStatus("Listening...");
             startRecognition(sessionId);
           });
@@ -156,6 +149,14 @@ function App() {
     recognitionRef.current = recognition;
   };
 
+  const onPlayPending = async () => {
+    if (!pendingAudioUrl) return;
+    await playUrl(pendingAudioUrl, () => {
+      setStatus("Listening...");
+      if (sessionId) startRecognition(sessionId);
+    });
+  };
+
   return (
     <div className="app">
       <h1>AI Medical Agent</h1>
@@ -163,6 +164,12 @@ function App() {
       <button onClick={startCall} className="call-button">
         Call AI
       </button>
+
+      {pendingAudioUrl && (
+        <button onClick={onPlayPending} className="call-button">
+          Play response
+        </button>
+      )}
     </div>
   );
 }

@@ -22,13 +22,11 @@ app.add_middleware(
 )
 
 
-# Request model
 class MessageRequest(BaseModel):
     session_id: str
     user_message: str
 
 
-# Start new session (kept EXACTLY the same JSON contract as before)
 @app.get("/start_session")
 def start_session():
     import uuid
@@ -41,21 +39,24 @@ def start_session():
     }
 
 
-# Send user message to agent and get response AUDIO
 @app.post("/message")
 def message(req: MessageRequest):
-    """Return audio bytes instead of JSON string.
-
-    This keeps the same request payload as before, but changes the response to
-    audio/wav to avoid ffmpeg/mp3 dependencies.
-    """
+    """Return audio bytes instead of JSON string."""
 
     memory.add_user(req.session_id, req.user_message)
     ai_response = agent.respond(memory.get(req.session_id))
     memory.add_ai(req.session_id, ai_response)
 
-    # Minimal, dependency-free TTS using Piper WAV output.
     from app.tts.piper_wav_tts import synthesize_speech_wav
 
     wav_bytes = synthesize_speech_wav(ai_response)
+
+    # IMPORTANT: If wav_bytes is empty, return 500 with a clear message so it's obvious.
+    if not wav_bytes:
+        return Response(
+            content=b"Piper TTS returned empty audio. Check your voice model/config files.",
+            status_code=500,
+            media_type="text/plain",
+        )
+
     return Response(content=wav_bytes, media_type="audio/wav")
