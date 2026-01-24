@@ -1,22 +1,23 @@
 # Backend TTS
 
-This backend returns **audio/mpeg** (MP3) from `/start_session` and `/message`.
+This backend returns an audio response from `/message`.
 
-## Configure Piper voice
+## Option A (recommended on Windows): edge-tts
 
-Set these env vars before starting the backend:
-
-- `PIPER_VOICE_MODEL_PATH` (path to `.onnx` model)
-- `PIPER_VOICE_CONFIG_PATH` (path to `.onnx.json` config)
-
-Example:
+Install:
 
 ```bash
-export PIPER_VOICE_MODEL_PATH=backend/app/data/en_US-lessac-medium.onnx
-export PIPER_VOICE_CONFIG_PATH=backend/app/data/en_US-lessac-medium.onnx.json
+pip install edge-tts
 ```
 
-## Notes
+It uses Microsoft Edge's online TTS voices (no API key). Default voice is `en-US-JennyNeural`.
 
-- The session id is returned in the `X-Session-Id` response header from `/start_session`.
-- Frontend plays audio and only resumes listening after playback ends.
+Optional env vars:
+
+- `EDGE_TTS_VOICE` (e.g. `en-US-JennyNeural`)
+- `EDGE_TTS_RATE` (e.g. `+0%`, `-10%`, `+10%`)
+- `EDGE_TTS_VOLUME` (e.g. `+0%`, `+20%`)
+
+## Option B: Piper (offline)
+
+Piper requires extra setup on Windows (eSpeak NG data). If you still want Piper, use the `piper_*` modules in this folder.

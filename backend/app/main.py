@@ -47,16 +47,15 @@ def message(req: MessageRequest):
     ai_response = agent.respond(memory.get(req.session_id))
     memory.add_ai(req.session_id, ai_response)
 
-    from app.tts.piper_wav_tts import synthesize_speech_wav
+    from app.tts.edge_tts import synthesize_speech_mp3
 
-    wav_bytes = synthesize_speech_wav(ai_response)
+    mp3_bytes = synthesize_speech_mp3(ai_response)
 
-    # IMPORTANT: If wav_bytes is empty, return 500 with a clear message so it's obvious.
-    if not wav_bytes:
+    if not mp3_bytes:
         return Response(
-            content=b"Piper TTS returned empty audio. Check your voice model/config files.",
+            content=b"edge-tts returned empty audio.",
             status_code=500,
             media_type="text/plain",
         )
 
-    return Response(content=wav_bytes, media_type="audio/wav")
+    return Response(content=mp3_bytes, media_type="audio/mpeg")
