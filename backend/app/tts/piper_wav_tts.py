@@ -53,29 +53,25 @@ def _get_voice() -> PiperVoice:
 def synthesize_speech_wav(text: str) -> bytes:
     """Synthesize speech using Piper and return WAV bytes.
 
-    Piper's Python API differs across versions.
+    PiperVoice.synthesize_wav(text, wav_file) expects wav_file to be a
+    wave.Wave_write-like object (supports setframerate, setnchannels, etc.).
 
-    Some versions expose PiperVoice.synthesize_wav(text, wav_file) where wav_file
-    is a file-like object opened in binary mode.
-
-    We support that signature by writing to an in-memory BytesIO.
+    We use an in-memory BytesIO wrapped by wave.open(..., 'wb').
     """
 
     voice = _get_voice()
 
     import io
+    import wave
 
-    # Try synthesize_wav(text, wav_file)
+    # Preferred path for your Piper version: synthesize_wav(text, wav_file)
     if hasattr(voice, "synthesize_wav"):
-        wav_io = io.BytesIO()
-        try:
-            voice.synthesize_wav(text, wav_io)
-            return wav_io.getvalue()
-        except TypeError:
-            # Different signature; fall through.
-            pass
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wav_file:
+            voice.synthesize_wav(text, wav_file)
+        return buf.getvalue()
 
-    # Fallback: try synthesize() iterator of bytes
+    # Fallback: try synthesize() iterator of bytes (best-effort)
     out = bytearray()
     synth = voice.synthesize(text)
     try:
