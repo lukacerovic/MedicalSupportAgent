@@ -4,66 +4,59 @@ import "./App.css";
 function App() {
   const [status, setStatus] = useState("Click 'Call AI' to start");
   const [sessionId, setSessionId] = useState(null);
-  const [pendingAudioUrl, setPendingAudioUrl] = useState(null);
-
   const recognitionRef = useRef(null);
   const silenceTimerRef = useRef(null);
-  const isPlayingRef = useRef(false);
 
-  const audioRef = useRef(null);
+  // Keep this flag so we don't re-enter listening while audio is playing
+  const isPlayingAudioRef = useRef(false);
 
-  const ensureAudioElement = () => {
-    if (!audioRef.current) {
-      audioRef.current = new Audio();
-      audioRef.current.preload = "auto";
-    }
-    return audioRef.current;
-  };
-
-  const cleanupPending = () => {
-    if (pendingAudioUrl) URL.revokeObjectURL(pendingAudioUrl);
-    setPendingAudioUrl(null);
-  };
-
-  const playUrl = async (audioUrl, onEnd) => {
+  // Greeting uses browser TTS exactly like before
+  const speakGreeting = (text, onEnd) => {
     setStatus("AI Agent speaking...");
-    isPlayingRef.current = true;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "en-US";
+    utterance.onend = () => {
+      if (onEnd) onEnd();
+    };
+    window.speechSynthesis.speak(utterance);
+  };
 
-    const audio = ensureAudioElement();
+  // AI response uses backend audio
+  const playResponseAudio = async (audioBlob, onEnd) => {
+    setStatus("AI Agent speaking...");
+    isPlayingAudioRef.current = true;
+
+    const audioUrl = URL.createObjectURL(audioBlob);
+    const audio = new Audio(audioUrl);
+
+    const cleanup = () => {
+      URL.revokeObjectURL(audioUrl);
+    };
 
     audio.onended = () => {
-      isPlayingRef.current = false;
+      cleanup();
+      isPlayingAudioRef.current = false;
       if (onEnd) onEnd();
     };
 
     audio.onerror = (e) => {
       console.error("Audio playback error:", e);
-      isPlayingRef.current = false;
+      cleanup();
+      isPlayingAudioRef.current = false;
       setStatus("Error playing audio");
     };
 
-    audio.src = audioUrl;
-
     try {
       await audio.play();
-      // If play succeeded, clear any pending audio.
-      cleanupPending();
     } catch (err) {
       console.error("Autoplay blocked or failed:", err);
-      isPlayingRef.current = false;
-      setStatus("Click 'Play response' to hear the AI.");
-      setPendingAudioUrl(audioUrl);
+      cleanup();
+      isPlayingAudioRef.current = false;
+      setStatus("Autoplay blocked. Please interact and try again.");
     }
   };
 
-  const playBlob = async (audioBlob, onEnd) => {
-    const audioUrl = URL.createObjectURL(audioBlob);
-    await playUrl(audioUrl, () => {
-      URL.revokeObjectURL(audioUrl);
-      if (onEnd) onEnd();
-    });
-  };
-
+  // Start a new session and speak greeting
   const startCall = async () => {
     setStatus("Starting session...");
     try {
@@ -72,17 +65,19 @@ function App() {
       const newSessionId = data.session_id;
       setSessionId(newSessionId);
 
-      setStatus("Listening...");
-      startRecognition(newSessionId);
+      // Speak greeting using browser TTS (kept)
+      speakGreeting(data.greeting, () => {
+        setStatus("Listening...");
+        startRecognition(newSessionId);
+      });
     } catch (err) {
       console.error("Failed to start session:", err);
       setStatus("Error starting session");
     }
   };
 
+  // Start listening for user voice (pause detection logic unchanged)
   const startRecognition = (sessionId) => {
-    if (isPlayingRef.current) return;
-
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -103,12 +98,16 @@ function App() {
         transcript += event.results[i][0].transcript;
       }
 
+      // Reset silence timer on any speech
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
+      // Set timer to detect 3s silence
       silenceTimerRef.current = setTimeout(async () => {
-        recognition.stop();
+        recognition.stop(); // stop recording
+
         setStatus("Processing your message...");
 
+        // Send transcript to backend
         try {
           const response = await fetch("http://127.0.0.1:8000/message", {
             method: "POST",
@@ -125,15 +124,17 @@ function App() {
           }
 
           const audioBlob = await response.blob();
-          await playBlob(audioBlob, () => {
+
+          // Play AI response audio from backend
+          playResponseAudio(audioBlob, () => {
             setStatus("Listening...");
-            startRecognition(sessionId);
+            startRecognition(sessionId); // continue listening
           });
         } catch (err) {
           console.error("Failed to send message:", err);
           setStatus("Error processing message");
         }
-      }, 3000);
+      }, 3000); // 3s pause
     };
 
     recognition.onerror = (event) => {
@@ -142,19 +143,12 @@ function App() {
     };
 
     recognition.onend = () => {
-      if (status === "Listening..." && !isPlayingRef.current) recognition.start();
+      // Restart recognition only if we are in listening mode and NOT playing audio.
+      if (status === "Listening..." && !isPlayingAudioRef.current) recognition.start();
     };
 
     recognition.start();
     recognitionRef.current = recognition;
-  };
-
-  const onPlayPending = async () => {
-    if (!pendingAudioUrl) return;
-    await playUrl(pendingAudioUrl, () => {
-      setStatus("Listening...");
-      if (sessionId) startRecognition(sessionId);
-    });
   };
 
   return (
@@ -164,12 +158,6 @@ function App() {
       <button onClick={startCall} className="call-button">
         Call AI
       </button>
-
-      {pendingAudioUrl && (
-        <button onClick={onPlayPending} className="call-button">
-          Play response
-        </button>
-      )}
     </div>
   );
 }
