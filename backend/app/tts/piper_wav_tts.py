@@ -53,21 +53,29 @@ def _get_voice() -> PiperVoice:
 def synthesize_speech_wav(text: str) -> bytes:
     """Synthesize speech using Piper and return WAV bytes.
 
-    The piper python API varies by version:
-    - Newer versions provide PiperVoice.synthesize_wav(text) which returns WAV bytes.
-    - Some versions expose synthesize() that returns an iterator/stream.
+    Piper's Python API differs across versions.
 
-    We prefer synthesize_wav when available.
+    Some versions expose PiperVoice.synthesize_wav(text, wav_file) where wav_file
+    is a file-like object opened in binary mode.
+
+    We support that signature by writing to an in-memory BytesIO.
     """
 
     voice = _get_voice()
 
-    # Preferred: direct WAV bytes
-    if hasattr(voice, "synthesize_wav"):
-        wav_bytes = voice.synthesize_wav(text)
-        return wav_bytes or b""
+    import io
 
-    # Fallback: try synthesize() and join bytes if it returns an iterator
+    # Try synthesize_wav(text, wav_file)
+    if hasattr(voice, "synthesize_wav"):
+        wav_io = io.BytesIO()
+        try:
+            voice.synthesize_wav(text, wav_io)
+            return wav_io.getvalue()
+        except TypeError:
+            # Different signature; fall through.
+            pass
+
+    # Fallback: try synthesize() iterator of bytes
     out = bytearray()
     synth = voice.synthesize(text)
     try:
@@ -75,7 +83,6 @@ def synthesize_speech_wav(text: str) -> bytes:
             if isinstance(chunk, (bytes, bytearray)):
                 out.extend(chunk)
     except TypeError:
-        # If synthesize() didn't return an iterator, give up gracefully.
         return b""
 
     return bytes(out)
