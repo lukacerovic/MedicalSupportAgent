@@ -72,15 +72,24 @@ class BaseAgent:
         self.base_system_prompt = system_prompt
 
     def respond(self, conversation: list[str]) -> str:
+        """Legacy non-streaming response"""
+        full_response = ""
+        for chunk in self.respond_stream(conversation):
+            full_response += chunk
+        return full_response
+
+    def respond_stream(self, conversation: list[str]):
         """
-        conversation: list of strings including previous user and AI messages
+        Generator that yields text chunks. 
+        Handles buffering for tool calls internally to avoid streaming tool XML to the user.
         """
 
         last_user_message = conversation[-1]
 
         guardrail_response = apply_guardrails(last_user_message)
         if guardrail_response:
-            return guardrail_response
+            yield guardrail_response
+            return
 
         system_prompt = (
             self.base_system_prompt
@@ -96,58 +105,92 @@ class BaseAgent:
             role = "user" if i % 2 == 0 else "assistant"
             messages.append({"role": role, "content": msg})
 
-        response = client.chat.completions.create(
+        response_stream = client.chat.completions.create(
             model=OLLAMA_MODEL,
             temperature=0.2,
-            messages=messages
+            messages=messages,
+            stream=True
         )
 
-        assistant_message = response.choices[0].message.content.strip()
-
-        # Check if model wants to call a tool
-        tool_call_match = re.search(
-            r'<TOOL_CALL>\s*tool_name:\s*(\S+)\s*parameters:\s*([\s\S]+?)</TOOL_CALL>',
-            assistant_message,
-            re.IGNORECASE
-        )
-
-        if tool_call_match:
-            tool_name = tool_call_match.group(1).strip()
-            params_text = tool_call_match.group(2).strip()
-            
-            # Parse parameters (simple YAML-style)
-            params = {}
-            for line in params_text.split('\n'):
-                line = line.strip()
-                if ':' in line:
-                    key, value = line.split(':', 1)
-                    params[key.strip()] = value.strip()
-            
-            # Execute tool
-            tool_result = self._execute_tool(tool_name, params)
-            
-            # Remove tool call from response and add result
-            clean_response = re.sub(
-                r'<TOOL_CALL>[\s\S]+?</TOOL_CALL>',
-                '',
-                assistant_message
-            ).strip()
-            
-            # Parse tool result and generate natural response
-            try:
-                result_data = json.loads(tool_result)
-                if result_data.get("success"):
-                    if "reservation" in result_data:
-                        res = result_data["reservation"]
-                        return f"{clean_response}\n\nYour appointment is confirmed! Reservation ID: {res['reservationId']}".strip()
-                    else:
-                        return f"{clean_response}\n\n{result_data.get('message', '')}".strip()
-                else:
-                    return f"I'm sorry, there was an issue: {result_data.get('error', 'Unknown error')}. Let's try a different time slot."
-            except:
-                return clean_response if clean_response else "Reservation processed."
+        # Buffer to detect tool calls or accumulate sentence fragments
+        buffer = ""
+        is_tool_call_potential = False
         
-        return assistant_message
+        for chunk in response_stream:
+            content = chunk.choices[0].delta.content or ""
+            if not content:
+                continue
+                
+            buffer += content
+            
+            # Check if we might be starting a tool call
+            if "<" in buffer and not is_tool_call_potential:
+                if "<TOOL_CALL>" in buffer:
+                    is_tool_call_potential = True
+                elif len(buffer) > 20 and "<TOOL_CALL>" not in buffer:
+                     # False alarm, flush buffer
+                     yield buffer
+                     buffer = ""
+            
+            # If we are strictly in text mode (no pending tool start), yield content
+            if not is_tool_call_potential and "<" not in buffer:
+                yield buffer
+                buffer = ""
+
+            # Check for completed tool call
+            if "</TOOL_CALL>" in buffer:
+                # Extract and execute tool
+                tool_call_match = re.search(
+                    r'<TOOL_CALL>\s*tool_name:\s*(\S+)\s*parameters:\s*([\s\S]+?)</TOOL_CALL>',
+                    buffer,
+                    re.IGNORECASE
+                )
+                
+                if tool_call_match:
+                    tool_name = tool_call_match.group(1).strip()
+                    params_text = tool_call_match.group(2).strip()
+                    
+                    params = {}
+                    for line in params_text.split('\n'):
+                        line = line.strip()
+                        if ':' in line:
+                            key, value = line.split(':', 1)
+                            params[key.strip()] = value.strip()
+                    
+                    # Yield a filler message if needed, or just silence while working
+                    # yield "Checking that for you..." 
+                    
+                    tool_result = self._execute_tool(tool_name, params)
+                    
+                    # Clean buffer of the tool call tag
+                    buffer = re.sub(r'<TOOL_CALL>[\s\S]+?</TOOL_CALL>', '', buffer).strip()
+                    if buffer:
+                        yield buffer
+                        buffer = ""
+
+                    # Now generate natural response based on tool result
+                    # We inject the tool result back into conversation and stream the interpretation
+                    tool_followup_messages = messages + [
+                        {"role": "assistant", "content": f"<TOOL_CALL>...executed...</TOOL_CALL>"},
+                        {"role": "system", "content": f"Tool Result: {tool_result}. content: Please formulate a natural response to the user based on this result."}
+                    ]
+                    
+                    followup_stream = client.chat.completions.create(
+                        model=OLLAMA_MODEL,
+                        temperature=0.2,
+                        messages=tool_followup_messages,
+                        stream=True
+                    )
+                    
+                    for f_chunk in followup_stream:
+                        f_content = f_chunk.choices[0].delta.content or ""
+                        yield f_content
+                    
+                    return # End after tool response
+
+        # Flush any remaining buffer
+        if buffer and not is_tool_call_potential:
+            yield buffer
 
     def _execute_tool(self, tool_name: str, params: dict) -> str:
         """Execute a tool and return JSON result."""
