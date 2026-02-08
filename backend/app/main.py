@@ -1,12 +1,14 @@
 # app/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
+import re
 
 from app.agent.base_agent import BaseAgent
 from app.memory.session_memory import memory
 from app.agent.system_prompt import SYSTEM_PROMPT
+from app.tts.piper_wav_tts import synthesize_speech_raw, get_wav_header
 
 # Load your AI agent
 agent = BaseAgent(system_prompt=SYSTEM_PROMPT)
@@ -40,23 +42,65 @@ def start_session():
 
 
 @app.post("/message")
-def message(req: MessageRequest):
-    """Return audio bytes instead of JSON string."""
-
+async def message(req: MessageRequest):
+    """
+    Stream audio bytes as they are generated.
+    Reduced latency by processing sentence-by-sentence.
+    """
     memory.add_user(req.session_id, req.user_message)
-    ai_response = agent.respond(memory.get(req.session_id))
-    memory.add_ai(req.session_id, ai_response)
+    
+    return StreamingResponse(
+        audio_stream_generator(req.session_id),
+        media_type="audio/wav"
+    )
 
-    # Offline TTS (Piper -> WAV). Requires eSpeak NG data to be installed/configured.
-    from app.tts.piper_wav_tts import synthesize_speech_wav
-
-    wav_bytes = synthesize_speech_wav(ai_response)
-
-    if not wav_bytes:
-        return Response(
-            content=b"Piper returned empty audio. Ensure eSpeak NG is installed and voice model files are present.",
-            status_code=500,
-            media_type="text/plain",
-        )
-
-    return Response(content=wav_bytes, media_type="audio/wav")
+async def audio_stream_generator(session_id: str):
+    """
+    Generator that yields WAV audio chunks.
+    1. Yields WAV Header first.
+    2. Consumes text stream from agent.
+    3. Buffers text into sentences.
+    4. Synthesizes and yields raw audio for each sentence.
+    """
+    
+    # 1. Send WAV Header first so browser recognizes the stream format
+    yield get_wav_header()
+    
+    conversation = memory.get(session_id)
+    
+    # We need to accumulate the full text to save to memory later
+    full_ai_response = ""
+    sentence_buffer = ""
+    
+    # Regex to detect sentence boundaries
+    # Matches periods, question marks, exclamation marks followed by space or end of string
+    sentence_end_pattern = re.compile(r'(?<=[.!?])\s+')
+    
+    for text_chunk in agent.respond_stream(conversation):
+        full_ai_response += text_chunk
+        sentence_buffer += text_chunk
+        
+        # Check if we have a full sentence
+        # We split by the pattern
+        parts = sentence_end_pattern.split(sentence_buffer)
+        
+        if len(parts) > 1:
+            # We have at least one complete sentence
+            # The last part is the incomplete next sentence
+            to_synthesize = parts[:-1]
+            sentence_buffer = parts[-1]
+            
+            for sentence in to_synthesize:
+                if sentence.strip():
+                    raw_audio = synthesize_speech_raw(sentence)
+                    if raw_audio:
+                        yield raw_audio
+    
+    # Process remaining buffer
+    if sentence_buffer.strip():
+        raw_audio = synthesize_speech_raw(sentence_buffer)
+        if raw_audio:
+            yield raw_audio
+            
+    # Update memory with the full response after stream ends
+    memory.add_ai(session_id, full_ai_response)
