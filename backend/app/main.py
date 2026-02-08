@@ -57,29 +57,32 @@ async def message(req: MessageRequest):
 async def audio_stream_generator(session_id: str):
     """
     Generator that yields RAW PCM chunks.
+    Splits on commas and sentence endings for faster playback.
     """
-    # Removed get_wav_header() call - sending pure raw data
     
     conversation = memory.get(session_id)
     full_ai_response = ""
     sentence_buffer = ""
     
-    # Regex to detect sentence boundaries
-    sentence_end_pattern = re.compile(r'(?<=[.!?])\s+')
+    # Updated regex: Splits on (. ? ! , : ;) followed by space
+    # This creates smaller chunks for the TTS to process faster
+    chunk_pattern = re.compile(r'(?<=[.?!,;:])\s+')
     
     for text_chunk in agent.respond_stream(conversation):
         full_ai_response += text_chunk
         sentence_buffer += text_chunk
         
-        parts = sentence_end_pattern.split(sentence_buffer)
+        parts = chunk_pattern.split(sentence_buffer)
         
         if len(parts) > 1:
+            # We have at least one complete phrase
             to_synthesize = parts[:-1]
             sentence_buffer = parts[-1]
             
-            for sentence in to_synthesize:
-                if sentence.strip():
-                    raw_audio = synthesize_speech_raw(sentence)
+            for phrase in to_synthesize:
+                if phrase.strip():
+                    # Generate audio for this phrase
+                    raw_audio = synthesize_speech_raw(phrase)
                     if raw_audio:
                         yield raw_audio
     
