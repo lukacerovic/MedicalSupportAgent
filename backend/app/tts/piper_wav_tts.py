@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import io
+import wave
 from pathlib import Path
 
 from piper.voice import PiperVoice
@@ -51,18 +53,8 @@ def _get_voice() -> PiperVoice:
 
 
 def synthesize_speech_wav(text: str) -> bytes:
-    """Synthesize speech using Piper and return WAV bytes.
-
-    PiperVoice.synthesize_wav(text, wav_file) expects wav_file to be a
-    wave.Wave_write-like object (supports setframerate, setnchannels, etc.).
-
-    We use an in-memory BytesIO wrapped by wave.open(..., 'wb').
-    """
-
+    """Synthesize speech using Piper and return WAV bytes (with header)."""
     voice = _get_voice()
-
-    import io
-    import wave
 
     # Preferred path for your Piper version: synthesize_wav(text, wav_file)
     if hasattr(voice, "synthesize_wav"):
@@ -82,3 +74,35 @@ def synthesize_speech_wav(text: str) -> bytes:
         return b""
 
     return bytes(out)
+
+
+def get_wav_header() -> bytes:
+    """Return a standard WAV header for streaming (16-bit mono 22050Hz usually)."""
+    # Piper defaults: 22050Hz, 1 channel, 16-bit usually. 
+    # We create a dummy header.
+    voice = _get_voice()
+    sample_rate = voice.config.sample_rate
+    
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2) # 16-bit
+        wav_file.setframerate(sample_rate)
+        # Write 0 frames to get just the header
+        pass
+    
+    # wave.open writes header only when closed or data written. 
+    # But it might need to know length. 
+    # For streaming, we often set length to something huge or ignore.
+    # Standard WAV header is 44 bytes.
+    # Let's generate a header with "unknown" length (common in streaming).
+    # Easier: generate a tiny wav and take the first 44 bytes.
+    return synthesize_speech_wav("a")[:44]
+
+
+def synthesize_speech_raw(text: str) -> bytes:
+    """Synthesize speech and return raw PCM bytes (no header)."""
+    wav_data = synthesize_speech_wav(text)
+    if len(wav_data) > 44:
+        return wav_data[44:] # Skip 44-byte header
+    return b""
