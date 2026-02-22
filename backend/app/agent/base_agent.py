@@ -1,6 +1,7 @@
 from openai import OpenAI
 from app.config import OLLAMA_BASE_URL, OLLAMA_MODEL
 import json
+from datetime import datetime
 
 from app.agent.guardrails import apply_guardrails
 from app.agent.tools.service_context import build_service_context
@@ -10,7 +11,8 @@ from app.agent.tools.reservation_tools import (
     tool_find_patient_reservations,
     tool_update_reservation,
     tool_delete_reservation,
-    tool_check_availability
+    tool_check_availability,
+    tool_get_available_slots
 )
 
 client = OpenAI(
@@ -36,7 +38,8 @@ class BaseAgent:
             "tool_find_patient_reservations": tool_find_patient_reservations,
             "tool_update_reservation": tool_update_reservation,
             "tool_delete_reservation": tool_delete_reservation,
-            "tool_check_availability": tool_check_availability
+            "tool_check_availability": tool_check_availability,
+            "tool_get_available_slots": tool_get_available_slots
         }
 
     def respond_stream(self, conversation: list[str]):
@@ -51,10 +54,14 @@ class BaseAgent:
             yield guardrail_response
             return
 
-        # 2. Build Context
+        # 2. Build Context with Current Date/Time
+        now = datetime.now()
+        current_datetime_str = now.strftime("%A, %B %d, %Y at %H:%M")
+
         system_prompt = (
             self.base_system_prompt
-            + "\n\n"
+            + f"\n\nCURRENT DATE AND TIME: {current_datetime_str}\n"
+            + "Use this to interpret relative dates like 'tomorrow', 'next Monday', etc.\n\n"
             + build_service_context()
         )
 
