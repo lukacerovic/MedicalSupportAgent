@@ -5,17 +5,30 @@ from typing import Optional
 from datetime import datetime, timedelta
 
 RESERVATIONS_FILE = "app/data/reservations.json"
+SERVICES_FILE = "app/data/services.json"
 file_lock = threading.Lock()
 
-SLOT_INTERVAL_MINUTES = 30
+SLOT_INTERVAL_MINUTES = 15 # Changed to 15 to allow finer-grained scheduling
 CLINIC_OPEN_HOUR = 9   # 09:00
 CLINIC_CLOSE_HOUR = 17 # 17:00
+
+def load_services() -> list[dict]:
+    """Load services to calculate duration."""
+    with open(SERVICES_FILE, "r") as f:
+        return json.load(f)
 
 def load_reservations() -> list[dict]:
     """Load all reservations from JSON file."""
     with open(RESERVATIONS_FILE, "r") as f:
         return json.load(f)
 
+def get_service_duration(service_id: str) -> int:
+    """Return the duration of a service in minutes (default 30 if not found)."""
+    services = load_services()
+    for s in services:
+        if s.get("id") == service_id:
+            return s.get("durationMinutes", 30)
+    return 30
 
 def save_reservations(reservations: list[dict]):
     """Save all reservations to JSON file (thread-safe)."""
@@ -24,6 +37,27 @@ def save_reservations(reservations: list[dict]):
             json.dump(reservations, f, indent=2, ensure_ascii=False)
             f.write("\n")
 
+def check_time_conflict(date: str, requested_time: str, requested_duration: int, reservations: list[dict]) -> bool:
+    """
+    Check if a requested slot overlaps with ANY existing reservation on the same day.
+    """
+    req_start = datetime.strptime(f"{date} {requested_time}", "%Y-%m-%d %H:%M")
+    req_end = req_start + timedelta(minutes=requested_duration)
+
+    for r in reservations:
+        if r.get("date") == date:
+            existing_service_id = r.get("serviceId")
+            existing_duration = get_service_duration(existing_service_id)
+            
+            # Using start and end time string parsing
+            existing_start = datetime.strptime(f"{r['date']} {r['time']}", "%Y-%m-%d %H:%M")
+            existing_end = existing_start + timedelta(minutes=existing_duration)
+
+            # Conflict logic: (StartA < EndB) and (EndA > StartB)
+            if req_start < existing_end and req_end > existing_start:
+                return True # Conflict found
+    
+    return False
 
 def create_reservation(
     service_id: str,
@@ -35,25 +69,18 @@ def create_reservation(
     patient_phone: str = None
 ) -> dict:
     """
-    Create a new reservation and save to file.
-    
-    Args:
-        service_id: Service ID (e.g., "blood_tests_basic")
-        date: Date in YYYY-MM-DD format
-        time: Time in HH:MM format (24-hour)
-        patient_name: Full patient name
-        patient_dob: Date of birth in YYYY-MM-DD format
-        patient_email: Patient email address
-        patient_phone: Patient phone number
-    
-    Returns:
-        The created reservation dict with reservationId
+    Create a new reservation and save to file with calculated end time.
     """
+    duration = get_service_duration(service_id)
+    start_dt = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
+    end_dt = start_dt + timedelta(minutes=duration)
+
     reservation = {
         "reservationId": str(uuid.uuid4()),
         "serviceId": service_id,
         "date": date,
-        "time": time,
+        "time": time,  # This acts as start_time
+        "endTime": end_dt.strftime("%H:%M"),
         "patientName": patient_name,
         "patientDOB": patient_dob,
         "patientEmail": patient_email or "",
@@ -68,7 +95,6 @@ def create_reservation(
 
 
 def find_reservation_by_id(reservation_id: str) -> Optional[dict]:
-    """Find a reservation by its UUID."""
     reservations = load_reservations()
     for r in reservations:
         if r.get("reservationId") == reservation_id:
@@ -77,7 +103,6 @@ def find_reservation_by_id(reservation_id: str) -> Optional[dict]:
 
 
 def find_reservations_by_patient(patient_name: str) -> list[dict]:
-    """Find all reservations for a given patient name (case-insensitive)."""
     reservations = load_reservations()
     patient_lower = patient_name.lower()
     return [
@@ -94,23 +119,24 @@ def update_reservation(
     patient_name: Optional[str] = None,
     patient_dob: Optional[str] = None
 ) -> Optional[dict]:
-    """
-    Update an existing reservation by ID.
-    Only updates fields that are provided (not None).
-    
-    Returns:
-        Updated reservation dict, or None if not found
-    """
     reservations = load_reservations()
     
     for r in reservations:
         if r.get("reservationId") == reservation_id:
-            if service_id is not None:
-                r["serviceId"] = service_id
-            if date is not None:
-                r["date"] = date
-            if time is not None:
-                r["time"] = time
+            new_service_id = service_id if service_id is not None else r["serviceId"]
+            new_date = date if date is not None else r["date"]
+            new_time = time if time is not None else r["time"]
+
+            # Recalculate end time based on potentially new service/time
+            duration = get_service_duration(new_service_id)
+            start_dt = datetime.strptime(f"{new_date} {new_time}", "%Y-%m-%d %H:%M")
+            end_dt = start_dt + timedelta(minutes=duration)
+
+            r["serviceId"] = new_service_id
+            r["date"] = new_date
+            r["time"] = new_time
+            r["endTime"] = end_dt.strftime("%H:%M")
+            
             if patient_name is not None:
                 r["patientName"] = patient_name
             if patient_dob is not None:
@@ -123,12 +149,6 @@ def update_reservation(
 
 
 def delete_reservation(reservation_id: str) -> bool:
-    """
-    Delete a reservation by ID.
-    
-    Returns:
-        True if deleted, False if not found
-    """
     reservations = load_reservations()
     original_count = len(reservations)
     
@@ -146,43 +166,26 @@ def delete_reservation(reservation_id: str) -> bool:
 
 def check_slot_availability(service_id: str, date: str, time: str) -> bool:
     """
-    Check if a slot is available (not already booked).
-    
-    Args:
-        service_id: Service ID
-        date: Date in YYYY-MM-DD
-        time: Time in HH:MM
-    
-    Returns:
-        True if slot is free, False if already booked
+    Check if a slot is available using actual duration overlap logic.
     """
     reservations = load_reservations()
-    for r in reservations:
-        if (r.get("serviceId") == service_id and
-            r.get("date") == date and
-            r.get("time") == time):
-            return False
-    return True
+    duration = get_service_duration(service_id)
+    
+    has_conflict = check_time_conflict(date, time, duration, reservations)
+    return not has_conflict
 
 def get_available_slots(service_id: str, from_date: str, count: int = 5) -> list[dict]:
     """
     Returns the next `count` available time slots for a service,
-    starting from `from_date`. Slots are 30-min intervals, Mon-Fri, 09:00-17:00.
+    starting from `from_date`. Accurately checks overlaps based on service duration.
     """
     reservations = load_reservations()
-
-    # Build a set of already-booked (date, time) pairs for this service
-    booked = set()
-    for r in reservations:
-        if r.get("serviceId") == service_id:
-            booked.add((r.get("date"), r.get("time")))
-
+    duration = get_service_duration(service_id)
     available = []
     
     try:
         current_day = datetime.strptime(from_date, "%Y-%m-%d")
     except ValueError:
-        # Fallback to today if date parsing fails
         current_day = datetime.now()
         
     max_days_to_search = 90
@@ -202,14 +205,21 @@ def get_available_slots(service_id: str, from_date: str, count: int = 5) -> list
         while slot < end and len(available) < count:
             date_str = slot.strftime("%Y-%m-%d")
             time_str = slot.strftime("%H:%M")
+            
+            # Check if this specific slot overlaps with any booked appointments
+            has_conflict = check_time_conflict(date_str, time_str, duration, reservations)
 
-            if (date_str, time_str) not in booked:
+            # Ensure the service duration doesn't push past closing time
+            slot_end = slot + timedelta(minutes=duration)
+            
+            if not has_conflict and slot_end <= end:
                 available.append({
                     "date": date_str,
                     "time": time_str,
                     "day_name": slot.strftime("%A, %B %d")
                 })
 
+            # Move forward by the interval to check the next possible slot
             slot += timedelta(minutes=SLOT_INTERVAL_MINUTES)
 
         current_day += timedelta(days=1)
