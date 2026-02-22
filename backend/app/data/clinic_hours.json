@@ -1,0 +1,31 @@
+{
+  "default": {
+    "monday": [{"start": "09:00", "end": "21:00"}],
+    "tuesday": [{"start": "09:00", "end": "21:00"}],
+    "wednesday": [{"start": "09:00", "end": "21:00"}],
+    "thursday": [{"start": "09:00", "end": "21:00"}],
+    "friday": [{"start": "09:00", "end": "17:00"}],
+    "saturday": [],
+    "sunday": []
+  },
+  "service_exceptions": {
+    "blood_tests_basic": {
+      "monday": [{"start": "07:00", "end": "12:00"}],
+      "tuesday": [{"start": "07:00", "end": "12:00"}],
+      "wednesday": [{"start": "07:00", "end": "12:00"}],
+      "thursday": [{"start": "07:00", "end": "12:00"}],
+      "friday": [{"start": "07:00", "end": "12:00"}],
+      "saturday": [{"start": "08:00", "end": "11:00"}],
+      "sunday": []
+    },
+    "blood_tests_extended": {
+      "monday": [{"start": "07:00", "end": "12:00"}],
+      "tuesday": [{"start": "07:00", "end": "12:00"}],
+      "wednesday": [{"start": "07:00", "end": "12:00"}],
+      "thursday": [{"start": "07:00", "end": "12:00"}],
+      "friday": [{"start": "07:00", "end": "12:00"}],
+      "saturday": [{"start": "08:00", "end": "11:00"}],
+      "sunday": []
+    }
+  }
+}
