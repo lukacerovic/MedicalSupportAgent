@@ -16,9 +16,11 @@ TOOLS_SCHEMA = [
                     "date": {"type": "string", "description": "Date in YYYY-MM-DD format"},
                     "time": {"type": "string", "description": "Time in HH:MM format"},
                     "patient_name": {"type": "string", "description": "Full name of the patient"},
-                    "patient_dob": {"type": "string", "description": "Date of birth in YYYY-MM-DD format"}
+                    "patient_dob": {"type": "string", "description": "Date of birth in YYYY-MM-DD format"},
+                    "patient_email": {"type": "string", "description": "Patient email address"},
+                    "patient_phone": {"type": "string", "description": "Patient phone number"}
                 },
-                "required": ["service_id", "date", "time", "patient_name", "patient_dob"]
+                "required": ["service_id", "date", "time", "patient_name", "patient_dob", "patient_email", "patient_phone"]
             }
         }
     },
@@ -82,6 +84,22 @@ TOOLS_SCHEMA = [
                     "time": {"type": "string", "description": "Time in HH:MM format"}
                 },
                 "required": ["service_id", "date", "time"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tool_get_available_slots",
+            "description": "Get available appointment time slots for a service. Call this as soon as a service is chosen, BEFORE asking the user for their preferred time. Always use today's date as from_date unless the user specified a future date.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "service_id": {"type": "string", "description": "The ID of the service"},
+                    "from_date": {"type": "string", "description": "Date to start searching from (YYYY-MM-DD). Use current date."},
+                    "count": {"type": "integer", "description": "How many slots to return, default 5"}
+                },
+                "required": ["service_id", "from_date"]
             }
         }
     }
