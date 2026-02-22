@@ -6,7 +6,8 @@ from app.agent.tools.reservations_store import (
     find_reservations_by_patient,
     update_reservation,
     delete_reservation,
-    check_slot_availability
+    check_slot_availability,
+    get_available_slots
 )
 
 
@@ -15,7 +16,9 @@ def tool_create_reservation(
     date: str,
     time: str,
     patient_name: str,
-    patient_dob: str
+    patient_dob: str,
+    patient_email: str = None,
+    patient_phone: str = None
 ) -> str:
     """
     Create a new reservation.
@@ -35,7 +38,9 @@ def tool_create_reservation(
             date=date,
             time=time,
             patient_name=patient_name,
-            patient_dob=patient_dob
+            patient_dob=patient_dob,
+            patient_email=patient_email,
+            patient_phone=patient_phone
         )
         
         return json.dumps({
@@ -178,3 +183,16 @@ def tool_check_availability(service_id: str, date: str, time: str) -> str:
             "success": False,
             "error": str(e)
         })
+
+
+def tool_get_available_slots(service_id: str, from_date: str, count: int = 5) -> str:
+    """
+    Returns available appointment slots for a service starting from a given date.
+    """
+    try:
+        slots = get_available_slots(service_id, from_date, count)
+        if not slots:
+            return json.dumps({"success": True, "slots": [], "message": "No available slots in the next 90 days."})
+        return json.dumps({"success": True, "slots": slots, "count": len(slots)})
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)})
