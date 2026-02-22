@@ -49,13 +49,12 @@ def check_time_conflict(date: str, requested_time: str, requested_duration: int,
             existing_service_id = r.get("serviceId")
             existing_duration = get_service_duration(existing_service_id)
             
-            # Using start and end time string parsing
             existing_start = datetime.strptime(f"{r['date']} {r['time']}", "%Y-%m-%d %H:%M")
             existing_end = existing_start + timedelta(minutes=existing_duration)
 
-            # Conflict logic: (StartA < EndB) and (EndA > StartB)
+            # Check for ANY overlap
             if req_start < existing_end and req_end > existing_start:
-                return True # Conflict found
+                return True
     
     return False
 
