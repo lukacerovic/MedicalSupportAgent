@@ -7,7 +7,8 @@ from app.agent.tools.reservations_store import (
     update_reservation,
     delete_reservation,
     check_slot_availability,
-    get_available_slots
+    get_available_slots,
+    get_service_duration
 )
 
 
@@ -46,7 +47,7 @@ def tool_create_reservation(
         return json.dumps({
             "success": True,
             "reservation": reservation,
-            "message": f"Reservation created successfully with ID {reservation['reservationId']}"
+            "message": f"Reservation created successfully with ID {reservation['reservationId']}."
         })
     except Exception as e:
         return json.dumps({
@@ -173,11 +174,20 @@ def tool_check_availability(service_id: str, date: str, time: str) -> str:
     """
     try:
         available = check_slot_availability(service_id, date, time)
-        return json.dumps({
-            "success": True,
-            "available": available,
-            "message": "Slot is available" if available else "Slot is already booked"
-        })
+        
+        if available:
+             duration = get_service_duration(service_id)
+             return json.dumps({
+                "success": True,
+                "available": True,
+                "message": f"Slot is available. Note this service requires {duration} minutes."
+            })
+        else:
+            return json.dumps({
+                "success": True,
+                "available": False,
+                "message": "Slot is already booked or overlaps with an existing appointment."
+            })
     except Exception as e:
         return json.dumps({
             "success": False,
@@ -192,7 +202,7 @@ def tool_get_available_slots(service_id: str, from_date: str, count: int = 5) ->
     try:
         slots = get_available_slots(service_id, from_date, count)
         if not slots:
-            return json.dumps({"success": True, "slots": [], "message": "No available slots in the next 90 days."})
+            return json.dumps({"success": True, "slots": [], "message": "No available slots found."})
         return json.dumps({"success": True, "slots": slots, "count": len(slots)})
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)})
