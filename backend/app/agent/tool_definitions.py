@@ -8,17 +8,28 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "tool_create_reservation",
-            "description": "Create a new reservation for a patient. ONLY use this after the user has explicitly confirmed the details.",
+            "description": """Create a new reservation for a patient. 
+            
+            CRITICAL: You MUST have collected ALL of these fields from the user BEFORE calling this tool:
+            - service_id: The service they want
+            - date and time: From available slots you showed them
+            - patient_name: Their FULL name (first AND last name)
+            - patient_dob: Their actual date of birth (NOT 1990-01-01 or any placeholder)
+            - patient_email: Their real email address
+            - patient_phone: Their real phone number
+            
+            DO NOT call this tool with placeholder, invented, or missing data. If you don't have a field, ASK the user for it.
+            """,
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "service_id": {"type": "string", "description": "The ID of the medical service (e.g., 'srv_01')"},
+                    "service_id": {"type": "string", "description": "The ID of the medical service (e.g., 'neurology_consult')"},
                     "date": {"type": "string", "description": "Date in YYYY-MM-DD format"},
-                    "time": {"type": "string", "description": "Time in HH:MM format"},
-                    "patient_name": {"type": "string", "description": "Full name of the patient"},
-                    "patient_dob": {"type": "string", "description": "Date of birth in YYYY-MM-DD format"},
-                    "patient_email": {"type": "string", "description": "Patient email address"},
-                    "patient_phone": {"type": "string", "description": "Patient phone number"}
+                    "time": {"type": "string", "description": "Time in HH:MM format (24-hour)"},
+                    "patient_name": {"type": "string", "description": "FULL name (first and last) collected from the user"},
+                    "patient_dob": {"type": "string", "description": "Real date of birth in YYYY-MM-DD format collected from the user"},
+                    "patient_email": {"type": "string", "description": "Real email address collected from the user"},
+                    "patient_phone": {"type": "string", "description": "Real phone number collected from the user"}
                 },
                 "required": ["service_id", "date", "time", "patient_name", "patient_dob", "patient_email", "patient_phone"]
             }
@@ -91,12 +102,20 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "tool_get_available_slots",
-            "description": "Get available appointment time slots for a service. Call this as soon as a service is chosen, BEFORE asking the user for their preferred time. Always use today's date as from_date unless the user specified a future date.",
+            "description": """Get available appointment time slots for a service starting from a specific date.
+            
+            This tool respects clinic operating hours which vary by day and service:
+            - Most services: Mon-Thu 9 AM - 9 PM, Fri 9 AM - 5 PM
+            - Blood tests: Early morning slots (7 AM - 12 PM) + Saturday mornings
+            - Closed: Sundays
+            
+            Call this BEFORE asking the user for their preferred time so you can show them real options.
+            """,
             "parameters": {
                 "type": "object",
                 "properties": {
                     "service_id": {"type": "string", "description": "The ID of the service"},
-                    "from_date": {"type": "string", "description": "Date to start searching from (YYYY-MM-DD). Use current date."},
+                    "from_date": {"type": "string", "description": "Date to start searching from (YYYY-MM-DD). Use current date or user's requested date."},
                     "count": {"type": "integer", "description": "How many slots to return, default 5"}
                 },
                 "required": ["service_id", "from_date"]
