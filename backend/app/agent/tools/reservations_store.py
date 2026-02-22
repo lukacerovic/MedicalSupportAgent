@@ -2,11 +2,14 @@ import json
 import uuid
 import threading
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 RESERVATIONS_FILE = "app/data/reservations.json"
 file_lock = threading.Lock()
 
+SLOT_INTERVAL_MINUTES = 30
+CLINIC_OPEN_HOUR = 9   # 09:00
+CLINIC_CLOSE_HOUR = 17 # 17:00
 
 def load_reservations() -> list[dict]:
     """Load all reservations from JSON file."""
@@ -27,7 +30,9 @@ def create_reservation(
     date: str,
     time: str,
     patient_name: str,
-    patient_dob: str
+    patient_dob: str,
+    patient_email: str = None,
+    patient_phone: str = None
 ) -> dict:
     """
     Create a new reservation and save to file.
@@ -38,6 +43,8 @@ def create_reservation(
         time: Time in HH:MM format (24-hour)
         patient_name: Full patient name
         patient_dob: Date of birth in YYYY-MM-DD format
+        patient_email: Patient email address
+        patient_phone: Patient phone number
     
     Returns:
         The created reservation dict with reservationId
@@ -48,7 +55,9 @@ def create_reservation(
         "date": date,
         "time": time,
         "patientName": patient_name,
-        "patientDOB": patient_dob
+        "patientDOB": patient_dob,
+        "patientEmail": patient_email or "",
+        "patientPhone": patient_phone or ""
     }
     
     reservations = load_reservations()
@@ -154,3 +163,55 @@ def check_slot_availability(service_id: str, date: str, time: str) -> bool:
             r.get("time") == time):
             return False
     return True
+
+def get_available_slots(service_id: str, from_date: str, count: int = 5) -> list[dict]:
+    """
+    Returns the next `count` available time slots for a service,
+    starting from `from_date`. Slots are 30-min intervals, Mon-Fri, 09:00-17:00.
+    """
+    reservations = load_reservations()
+
+    # Build a set of already-booked (date, time) pairs for this service
+    booked = set()
+    for r in reservations:
+        if r.get("serviceId") == service_id:
+            booked.add((r.get("date"), r.get("time")))
+
+    available = []
+    
+    try:
+        current_day = datetime.strptime(from_date, "%Y-%m-%d")
+    except ValueError:
+        # Fallback to today if date parsing fails
+        current_day = datetime.now()
+        
+    max_days_to_search = 90
+
+    for _ in range(max_days_to_search):
+        if len(available) >= count:
+            break
+
+        # Skip weekends (5=Sat, 6=Sun)
+        if current_day.weekday() >= 5:
+            current_day += timedelta(days=1)
+            continue
+
+        slot = current_day.replace(hour=CLINIC_OPEN_HOUR, minute=0, second=0, microsecond=0)
+        end  = current_day.replace(hour=CLINIC_CLOSE_HOUR, minute=0, second=0, microsecond=0)
+
+        while slot < end and len(available) < count:
+            date_str = slot.strftime("%Y-%m-%d")
+            time_str = slot.strftime("%H:%M")
+
+            if (date_str, time_str) not in booked:
+                available.append({
+                    "date": date_str,
+                    "time": time_str,
+                    "day_name": slot.strftime("%A, %B %d")
+                })
+
+            slot += timedelta(minutes=SLOT_INTERVAL_MINUTES)
+
+        current_day += timedelta(days=1)
+
+    return available
